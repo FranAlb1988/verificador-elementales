@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { COMPONENT_TYPES, terminalAbsPos } from '../model/components.js';
 import { GRID } from '../model/components.js';
 import Symbol from './Symbol.jsx';
+import DxfBackground from './DxfBackground.jsx';
 import { snap } from '../model/project.js';
 
 export default function Canvas({
@@ -10,12 +11,19 @@ export default function Canvas({
   wireStart, setWireStart,
   onPlace, onSelect, onMove, onWire, onDelete,
   onButtonPress, simInputs,
+  dxf, dxfScale, showDxf,
 }) {
   const svgRef = useRef(null);
   const [drag, setDrag] = useState(null); // {compId, dx, dy}
 
-  const width = 1400;
-  const height = 1000;
+  // Canvas se adapta al DXF si está presente.
+  let width = 1400, height = 1000;
+  if (dxf && dxf.bbox) {
+    const w = (dxf.bbox.maxX - dxf.bbox.minX) * dxfScale + 80;
+    const h = (dxf.bbox.maxY - dxf.bbox.minY) * dxfScale + 80;
+    width = Math.max(width, Math.ceil(w));
+    height = Math.max(height, Math.ceil(h));
+  }
 
   const screenToSvg = (clientX, clientY) => {
     const r = svgRef.current.getBoundingClientRect();
@@ -72,6 +80,11 @@ export default function Canvas({
           </pattern>
         </defs>
         <rect className="grid-bg" x={0} y={0} width={width} height={height} />
+
+        {/* DXF background */}
+        {dxf && showDxf && (
+          <DxfBackground dxf={dxf} scale={dxfScale} offsetX={40} offsetY={40} />
+        )}
 
         {/* Wires */}
         {project.wires.map(wire => {

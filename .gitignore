@@ -4,3 +4,4 @@ dist
 *.log
 .vite
 .claude/
+public/sample.dxf

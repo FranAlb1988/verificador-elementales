@@ -4,6 +4,8 @@ import { emptyProject, exampleProject, newComponent, newWire, serialize, deseria
 import { buildNetlist } from './model/netlist.js';
 import { runChecks } from './engine/checks.js';
 import { simulate } from './engine/simulation.js';
+import { parseDxf } from './import/dxf.js';
+import { recognize } from './import/recognize.js';
 import Canvas from './ui/Canvas.jsx';
 import Palette from './ui/Palette.jsx';
 import SidePanel from './ui/SidePanel.jsx';
@@ -16,6 +18,9 @@ export default function App() {
   const [wireStart, setWireStart] = useState(null);
   const [tab, setTab] = useState('checks');
   const [simInputs, setSimInputs] = useState({ buttons: {}, iedOutputs: {} });
+  const [dxf, setDxf] = useState(null);
+  const [dxfScale, setDxfScale] = useState(0.3);
+  const [showDxf, setShowDxf] = useState(true);
 
   const netlist = useMemo(() => buildNetlist(project), [project]);
   const findings = useMemo(() => runChecks(project, netlist), [project, netlist]);
@@ -136,6 +141,41 @@ export default function App() {
     e.target.value = '';
   };
 
+  const importDxf = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = parseDxf(reader.result);
+        if (!parsed.bbox) throw new Error('DXF sin entidades reconocibles');
+        setDxf(parsed);
+        setShowDxf(true);
+        // Auto-ajustar escala para encajar ~1400 de ancho
+        const w = parsed.bbox.maxX - parsed.bbox.minX;
+        const h = parsed.bbox.maxY - parsed.bbox.minY;
+        const s = Math.min(1400 / Math.max(w, 1), 4000 / Math.max(h, 1));
+        setDxfScale(Math.max(0.1, Math.min(1, s)));
+      } catch (err) {
+        alert(`No se pudo leer el DXF: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const runRecognize = () => {
+    if (!dxf) return;
+    const r = recognize(dxf, { scale: dxfScale });
+    const replace = project.components.length === 0
+      || confirm(`Reconocidos ${r.components} componentes y ${r.wires} cables.\n¿Reemplazar el proyecto actual? (Cancelar = sumar al proyecto existente)`);
+    setProject(p => replace
+      ? { components: r.components, wires: r.wires }
+      : { components: [...p.components, ...r.components], wires: [...p.wires, ...r.wires] });
+    setSelection(null);
+    alert(`Reconocido:\n  ${r.report.wires} cables\n  ${r.report.components} componentes (${Object.entries(r.report.byType).map(([k,v])=>`${v} ${k}`).join(', ') || 'ninguno clasificado'})`);
+  };
+
   const errCount = findings.filter(f => f.severity === 'error').length;
   const warnCount = findings.filter(f => f.severity === 'warning').length;
 
@@ -155,6 +195,28 @@ export default function App() {
                  onChange={loadProject}
                  style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
         </label>
+        <label style={{ position: 'relative', overflow: 'hidden' }}>
+          Importar DXF
+          <input type="file" accept=".dxf"
+                 onChange={importDxf}
+                 style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+        </label>
+        {dxf && (
+          <>
+            <button className={showDxf ? 'active' : ''} onClick={() => setShowDxf(s => !s)} title="Mostrar/ocultar fondo DXF">
+              Fondo {showDxf ? 'ON' : 'OFF'}
+            </button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '0 6px' }}>
+              Zoom
+              <input type="range" min="0.1" max="2" step="0.05" value={dxfScale}
+                     onChange={e => setDxfScale(parseFloat(e.target.value))}
+                     style={{ width: 90 }} />
+              <span style={{ width: 32 }}>{dxfScale.toFixed(2)}x</span>
+            </label>
+            <button onClick={runRecognize} title="Reconocer símbolos y cables del DXF">Reconocer</button>
+            <button onClick={() => { setDxf(null); }} title="Quitar DXF">×</button>
+          </>
+        )}
         <div className="spacer" />
         <span style={{ fontSize: 12 }}>
           <span style={{ color: '#fca5a5', marginRight: 8 }}>● {errCount} errores</span>
@@ -173,6 +235,7 @@ export default function App() {
           wireStart={wireStart}
           setWireStart={setWireStart}
           simInputs={simInputs}
+          dxf={dxf} dxfScale={dxfScale} showDxf={showDxf}
           onPlace={placeComponent}
           onSelect={(id) => { setSelection(id); if (id && project.components.find(c=>c.id===id)) setTab('props'); }}
           onMove={moveComponent}
