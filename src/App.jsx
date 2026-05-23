@@ -6,6 +6,7 @@ import { runChecks } from './engine/checks.js';
 import { simulate } from './engine/simulation.js';
 import { parseDxf } from './import/dxf.js';
 import { recognize } from './import/recognize.js';
+import { extractPatterns, loadSavedTags, saveTags } from './import/patterns.js';
 import Canvas from './ui/Canvas.jsx';
 import Palette from './ui/Palette.jsx';
 import SidePanel from './ui/SidePanel.jsx';
@@ -21,6 +22,8 @@ export default function App() {
   const [dxf, setDxf] = useState(null);
   const [dxfScale, setDxfScale] = useState(0.3);
   const [showDxf, setShowDxf] = useState(true);
+  const [patterns, setPatterns] = useState(null);          // [{sig, fp, count, ...}]
+  const [tagAssignments, setTagAssignments] = useState({}); // sig → componentType
 
   const netlist = useMemo(() => buildNetlist(project), [project]);
   const findings = useMemo(() => runChecks(project, netlist), [project, netlist]);
@@ -166,15 +169,67 @@ export default function App() {
 
   const runRecognize = () => {
     if (!dxf) return;
+    // 1) Cables (extracción directa por layer).
     const r = recognize(dxf, { scale: dxfScale });
-    const replace = project.components.length === 0
-      || confirm(`Reconocidos ${r.components} componentes y ${r.wires} cables.\n¿Reemplazar el proyecto actual? (Cancelar = sumar al proyecto existente)`);
+    // 2) Patrones de símbolos (clustering + fingerprint).
+    const { patterns: pats } = extractPatterns(dxf);
+    // 3) Pre-asignar tags guardados en localStorage por firma idéntica.
+    const saved = loadSavedTags();
+    const auto = {};
+    for (const p of pats) if (saved[p.sig]) auto[p.sig] = saved[p.sig];
+    setPatterns(pats);
+    setTagAssignments(auto);
+    // 4) Volcar wires (+ motor si lo detectó por heurística separada) al proyecto.
+    const replace = project.components.length === 0 ||
+      confirm(`Encontrados ${pats.length} patrones únicos (${pats.reduce((s,p)=>s+p.count,0)} instancias) y ${r.wires.length} cables.\n¿Reemplazar el proyecto actual?`);
     setProject(p => replace
       ? { components: r.components, wires: r.wires }
       : { components: [...p.components, ...r.components], wires: [...p.wires, ...r.wires] });
     setSelection(null);
-    alert(`Reconocido:\n  ${r.report.wires} cables\n  ${r.report.components} componentes (${Object.entries(r.report.byType).map(([k,v])=>`${v} ${k}`).join(', ') || 'ninguno clasificado'})`);
+    setTab('tagging');
   };
+
+  const assignTag = (sig, type) => {
+    setTagAssignments(a => {
+      const next = { ...a };
+      if (type) next[sig] = type; else delete next[sig];
+      return next;
+    });
+  };
+
+  const applyTags = () => {
+    if (!patterns) return;
+    const bbox = dxf.bbox;
+    const T = (p) => ({
+      x: Math.round((p.x - bbox.minX) * dxfScale + 40),
+      y: Math.round((bbox.maxY - p.y) * dxfScale + 40),
+    });
+    const newComps = [];
+    for (const p of patterns) {
+      const type = tagAssignments[p.sig];
+      if (!type || !COMPONENT_TYPES[type]) continue;
+      const def = COMPONENT_TYPES[type];
+      for (const inst of p.instances) {
+        const ctr = inst.fp.center;
+        const eCtr = T(ctr);
+        newComps.push({
+          id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}-${newComps.length}`,
+          type,
+          x: eCtr.x - def.size.w / 2,
+          y: eCtr.y - def.size.h / 2,
+          rot: 0,
+          props: { ...def.defaultProps },
+        });
+      }
+    }
+    setProject(p => ({ ...p, components: [...p.components, ...newComps] }));
+    // Persistir asignaciones para futuros DXFs.
+    const saved = loadSavedTags();
+    saveTags({ ...saved, ...tagAssignments });
+    alert(`Colocados ${newComps.length} componentes. Asignaciones guardadas para futuros planos.`);
+  };
+
+  const clearTags = () => setTagAssignments({});
 
   const errCount = findings.filter(f => f.severity === 'error').length;
   const warnCount = findings.filter(f => f.severity === 'warning').length;
@@ -261,6 +316,11 @@ export default function App() {
           onToggleIed={toggleIed}
           mode={mode}
           simResult={simResult}
+          patterns={patterns}
+          tagAssignments={tagAssignments}
+          onAssignTag={assignTag}
+          onApplyTags={applyTags}
+          onClearTags={clearTags}
         />
       </div>
     </div>

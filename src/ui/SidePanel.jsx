@@ -1,22 +1,33 @@
 import React from 'react';
 import { COMPONENT_TYPES } from '../model/components.js';
+import TaggingPanel from './TaggingPanel.jsx';
 
 export default function SidePanel({
   tab, setTab,
   project, selection, onUpdateProp, onRotate, onDelete,
   findings, simInputs, onTogglePress, onToggleIed,
   mode, simResult,
+  patterns, tagAssignments, onAssignTag, onApplyTags, onClearTags,
 }) {
   return (
     <div className="side">
       <div className="tabs">
-        <button className={tab === 'props' ? 'active' : ''} onClick={() => setTab('props')}>Propiedades</button>
+        <button className={tab === 'props' ? 'active' : ''} onClick={() => setTab('props')}>Props</button>
         <button className={tab === 'checks' ? 'active' : ''} onClick={() => setTab('checks')}>Chequeos</button>
-        <button className={tab === 'sim' ? 'active' : ''} onClick={() => setTab('sim')}>Simulación</button>
+        <button className={tab === 'sim' ? 'active' : ''} onClick={() => setTab('sim')}>Sim</button>
+        {patterns && (
+          <button className={tab === 'tagging' ? 'active' : ''} onClick={() => setTab('tagging')}>
+            Tagging
+          </button>
+        )}
       </div>
       {tab === 'props' && <PropsTab project={project} selection={selection} onUpdateProp={onUpdateProp} onRotate={onRotate} onDelete={onDelete} />}
       {tab === 'checks' && <ChecksTab findings={findings} project={project} />}
       {tab === 'sim' && <SimTab project={project} mode={mode} simInputs={simInputs} simResult={simResult} onTogglePress={onTogglePress} onToggleIed={onToggleIed} />}
+      {tab === 'tagging' && patterns && (
+        <TaggingPanel patterns={patterns} assignments={tagAssignments}
+                      onAssign={onAssignTag} onApply={onApplyTags} onClear={onClearTags} />
+      )}
     </div>
   );
 }
