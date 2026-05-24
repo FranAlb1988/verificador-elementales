@@ -120,7 +120,12 @@ function renderInner(comp, def, state) {
           <line x1={w/2} y1={0} x2={w/2} y2={h/2-6} stroke="#111827" strokeWidth={1.5}/>
           <line x1={w/2} y1={h/2+6} x2={w/2} y2={h} stroke="#111827" strokeWidth={1.5}/>
           {isEstop ? (
-            <circle cx={w/2} cy={h/2-12} r={6} fill="#dc2626" stroke="#7f1d1d" strokeWidth={1}/>
+            <>
+              {/* Cabeza tipo HONGO/MUSHROOM (Lámina 604): cap ancho + stem */}
+              <line x1={w/2} y1={h/2-6} x2={w/2} y2={h/2-13} stroke="#111827" strokeWidth={1.5}/>
+              <ellipse cx={w/2} cy={h/2-15} rx={9} ry={4}
+                       fill="#dc2626" stroke="#7f1d1d" strokeWidth={1}/>
+            </>
           ) : (
             <>
               <line x1={w/2-3} y1={h/2-6} x2={w/2-3} y2={h/2-12} stroke="#111827" strokeWidth={1.5}/>
@@ -135,16 +140,20 @@ function renderInner(comp, def, state) {
       );
     }
     case 'lamp': {
+      // Estilo JRI/CODELCO Lámina 605: círculo con LETRA de color adentro.
+      // A=AZUL, R=ROJO, V=VERDE, AM=AMARILLO, B=BLANCO
       const on = state.energized;
-      const colorMap = { green: '#16a34a', red: '#dc2626', white: '#f3f4f6', yellow: '#facc15' };
+      const colorMap = { green: '#16a34a', red: '#dc2626', white: '#e5e7eb', yellow: '#facc15', blue: '#2563eb' };
+      const letterMap = { green: 'V', red: 'R', white: 'B', yellow: 'AM', blue: 'A' };
       const fill = on ? (colorMap[comp.props.color] || '#fde047') : '#ffffff';
+      const letter = letterMap[comp.props.color] || '?';
       return (
         <>
           <line x1={w/2} y1={0} x2={w/2} y2={h/2-10} stroke="#111827" strokeWidth={1.5}/>
           <line x1={w/2} y1={h/2+10} x2={w/2} y2={h} stroke="#111827" strokeWidth={1.5}/>
           <circle cx={w/2} cy={h/2} r={10} fill={fill} stroke="#111827" strokeWidth={1.5}/>
-          <line x1={w/2-7} y1={h/2-7} x2={w/2+7} y2={h/2+7} stroke="#111827" strokeWidth={1}/>
-          <line x1={w/2-7} y1={h/2+7} x2={w/2+7} y2={h/2-7} stroke="#111827" strokeWidth={1}/>
+          <text x={w/2} y={h/2+4} textAnchor="middle" fontSize="11" fontWeight="bold"
+                fill={comp.props.color === 'white' ? '#111' : (on ? '#111' : '#666')}>{letter}</text>
         </>
       );
     }
@@ -157,18 +166,93 @@ function renderInner(comp, def, state) {
           <line x1={w/2-4}  y1={h/2+8} x2={w/2+4}  y2={h/2+8} stroke="#111827" strokeWidth={2}/>
         </>
       );
-    case 'terminal':
+    case 'terminal': {
+      // Estilo JRI/CODELCO Lámina 606 según location:
+      //   CCM=cuadrado negro, CAMPO=cuadrado blanco, PLC=rombo negro,
+      //   VARIADOR=triángulo blanco, SWITCHGEAR=cuadrado negro alargado
+      const loc = comp.props.location || 'CCM';
+      const isCCM = loc === 'CCM';
+      const isPLC = loc === 'PLC';
+      const isVar = loc === 'VARIADOR';
+      const isSwG = loc === 'SWITCHGEAR';
+      const filled = isCCM || isPLC || isSwG;
+      const fill = filled ? '#111827' : '#ffffff';
+      const textColor = filled ? '#ffffff' : '#111827';
+      let shape;
+      if (isPLC) {
+        // rombo
+        shape = <polygon points={`${w/2},${h/2-9} ${w/2+9},${h/2} ${w/2},${h/2+9} ${w/2-9},${h/2}`}
+                         fill={fill} stroke="#111" strokeWidth={1.5}/>;
+      } else if (isVar) {
+        // triángulo
+        shape = <polygon points={`${w/2},${h/2-9} ${w/2+9},${h/2+7} ${w/2-9},${h/2+7}`}
+                         fill={fill} stroke="#111" strokeWidth={1.5}/>;
+      } else if (isSwG) {
+        // cuadrado alargado
+        shape = <rect x={w/2-10} y={h/2-5} width={20} height={10} fill={fill} stroke="#111" strokeWidth={1.5}/>;
+      } else {
+        // CCM o CAMPO
+        shape = <rect x={w/2-8} y={h/2-8} width={16} height={16} fill={fill} stroke="#111" strokeWidth={1.5}/>;
+      }
       return (
         <>
           <line x1={w/2} y1={0} x2={w/2} y2={h} stroke="#111827" strokeWidth={1.5}/>
-          <rect className="component-body" x={w/2-8} y={h/2-8} width={16} height={16}
-                fill={comp.props.location === 'CCM' ? '#111827' : '#ffffff'} />
+          {shape}
           <text className="component-text" x={w/2} y={h/2+3} textAnchor="middle"
-                fill={comp.props.location === 'CCM' ? '#ffffff' : '#111827'}>
+                fill={textColor} fontSize="9">
             {comp.props.number || ''}
           </text>
         </>
       );
+    }
+    case 'overload':
+      // Relé térmico (sobrecarga): rectángulo con líneas onduladas que simulan el bimetal
+      return (
+        <>
+          <line x1={w/2} y1={0} x2={w/2} y2={h/2-10} stroke="#111827" strokeWidth={1.5}/>
+          <line x1={w/2} y1={h/2+10} x2={w/2} y2={h} stroke="#111827" strokeWidth={1.5}/>
+          <rect className="component-body" x={w/2-8} y={h/2-10} width={16} height={20}/>
+          <path d={`M ${w/2-5} ${h/2-7} q 3 0 3 4 t 3 4 t 3 4`} fill="none" stroke="#111" strokeWidth={1}/>
+        </>
+      );
+    case 'fuse':
+      // Fusible: rectángulo con línea que lo cruza horizontalmente
+      return (
+        <>
+          <line x1={w/2} y1={0} x2={w/2} y2={h/2-10} stroke="#111827" strokeWidth={1.5}/>
+          <line x1={w/2} y1={h/2+10} x2={w/2} y2={h} stroke="#111827" strokeWidth={1.5}/>
+          <rect className="component-body" x={w/2-6} y={h/2-10} width={12} height={20}/>
+          <line x1={w/2} y1={h/2-10} x2={w/2} y2={h/2+10} stroke="#111" strokeWidth={1}/>
+        </>
+      );
+    case 'selector-2': {
+      // Selector 2 posiciones: contacto con flecha apuntando arriba (mantenido)
+      const closed = state.conducts;
+      return (
+        <>
+          <line x1={w/2} y1={0} x2={w/2} y2={h/2-6} stroke="#111827" strokeWidth={1.5}/>
+          <line x1={w/2} y1={h/2+6} x2={w/2} y2={h} stroke="#111827" strokeWidth={1.5}/>
+          {/* flecha (símbolo de selector) */}
+          <line x1={w/2} y1={h/2-12} x2={w/2-6} y2={h/2-6} stroke="#111" strokeWidth={1.5}/>
+          <line x1={w/2} y1={h/2-12} x2={w/2+6} y2={h/2-6} stroke="#111" strokeWidth={1.5}/>
+          <line x1={w/2-10} y1={h/2-6} x2={w/2+10} y2={closed ? h/2-6 : h/2-2}
+                stroke={closed ? '#16a34a' : '#111827'} strokeWidth={2}/>
+        </>
+      );
+    }
+    case 'protection-relay': {
+      // Relé de protección con código ANSI (Lámina 603): círculo con número
+      const ansi = comp.props.ansi || comp.props.tag || '?';
+      const on = state.energized;
+      return (
+        <>
+          <line x1={w/2} y1={0} x2={w/2} y2={h/2-12} stroke="#111827" strokeWidth={1.5}/>
+          <line x1={w/2} y1={h/2+12} x2={w/2} y2={h} stroke="#111827" strokeWidth={1.5}/>
+          <circle cx={w/2} cy={h/2} r={12} className={`component-body ${on ? 'coil-on' : ''}`} />
+          <text x={w/2} y={h/2+3} textAnchor="middle" fontSize="9" fontWeight="bold">{ansi}</text>
+        </>
+      );
+    }
     case 'junction':
       return (
         <circle cx={w/2} cy={h/2} r={3.5} fill="#111827" />

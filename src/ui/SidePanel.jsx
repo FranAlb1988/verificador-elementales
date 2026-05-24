@@ -65,6 +65,9 @@ function PropsTab({ project, selection, onUpdateProp, onRotate, onDelete }) {
             <select value={comp.props[key]} onChange={e => onUpdateProp(comp.id, key, e.target.value)}>
               <option value="CCM">CCM</option>
               <option value="CAMPO">CAMPO</option>
+              <option value="PLC">PLC / DCS</option>
+              <option value="VARIADOR">VARIADOR</option>
+              <option value="SWITCHGEAR">SWITCHGEAR</option>
             </select>
           ) : (
             <input value={comp.props[key] ?? ''} onChange={e => {

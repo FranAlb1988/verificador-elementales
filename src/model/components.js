@@ -140,14 +140,62 @@ export const COMPONENT_TYPES = {
   },
 
   'ground': {
-    label: 'Tierra',
+    label: 'Tierra protección',
     category: 'Otros',
     size: { w: 40, h: 40 },
     terminals: [
       { id: 'G', x: 20, y: 0 },
     ],
-    defaultProps: {},
+    defaultProps: { kind: 'PE' },
     electrical: { role: 'ground' },
+  },
+
+  'overload': {
+    label: 'Relé térmico (sobrecarga)',
+    category: 'Control',
+    size: { w: 40, h: 40 },
+    terminals: [
+      { id: '1', x: 20, y: 0 },
+      { id: '2', x: 20, y: 40 },
+    ],
+    defaultProps: { tag: 'OL' },
+    electrical: { role: 'passthrough' },
+  },
+
+  'fuse': {
+    label: 'Fusible',
+    category: 'Fuerza',
+    size: { w: 40, h: 40 },
+    terminals: [
+      { id: '1', x: 20, y: 0 },
+      { id: '2', x: 20, y: 40 },
+    ],
+    defaultProps: { tag: 'FU1', rating: '10A' },
+    electrical: { role: 'passthrough' },
+  },
+
+  'selector-2': {
+    label: 'Selector 2 pos. (LOC/REM)',
+    category: 'Operador',
+    size: { w: 40, h: 40 },
+    terminals: [
+      { id: '1', x: 20, y: 0 },
+      { id: '2', x: 20, y: 40 },
+    ],
+    defaultProps: { label: 'LOC/REM', maintained: true },
+    electrical: { role: 'switch', kind: 'button', no: true },
+  },
+
+  'protection-relay': {
+    label: 'Relé protección (ANSI)',
+    category: 'Control',
+    size: { w: 40, h: 40 },
+    terminals: [
+      { id: '1', x: 20, y: 0 },
+      { id: '2', x: 20, y: 40 },
+    ],
+    defaultProps: { tag: '50/51', ansi: '50/51' },
+    electrical: { role: 'load', kind: 'coil' },
   },
 
   'terminal': {

@@ -45,6 +45,10 @@ function PaletteIcon({ type }) {
     'motor':         <><circle cx={12} cy={12} r={9} fill="#fff" stroke="#111"/><text x={12} y={16} textAnchor="middle" fontSize="11" fontWeight="bold">M</text></>,
     'ct':            <><circle cx={9} cy={12} r={5} fill="none" stroke="#111"/><circle cx={15} cy={12} r={5} fill="none" stroke="#111"/></>,
     'ied':           <rect x={2} y={4} width={20} height={16} rx={3} fill="#fff" stroke="#111"/>,
+    'overload':      <><rect x={7} y={4} width={10} height={16} fill="#fff" stroke="#111"/><path d="M 9 7 q 2 0 2 3 t 2 3 t 2 3" fill="none" stroke="#111"/></>,
+    'fuse':          <><rect x={8} y={4} width={8} height={16} fill="#fff" stroke="#111"/><line x1={12} y1={4} x2={12} y2={20} stroke="#111"/></>,
+    'selector-2':    <><line x1={12} y1={4} x2={12} y2={8} stroke="#111"/><line x1={12} y1={4} x2={8} y2={10} stroke="#111"/><line x1={12} y1={4} x2={16} y2={10} stroke="#111"/><line x1={4} y1={10} x2={20} y2={10} stroke="#111"/><line x1={12} y1={14} x2={12} y2={22} stroke="#111"/></>,
+    'protection-relay': <><circle cx={12} cy={12} r={8} fill="#fff" stroke="#111"/><text x={12} y={15} textAnchor="middle" fontSize="7" fontWeight="bold">51</text></>,
   };
   return (
     <svg width={24} height={24} viewBox="0 0 24 24">
