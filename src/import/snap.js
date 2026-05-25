@@ -1,4 +1,5 @@
 // Snap de endpoints de cable a terminales de componentes cercanos.
+// + addJunctionsAtBranches: inserta junctions donde concurren 3+ endpoints sueltos.
 // Tras la auto-extracción del DXF, los cables tienen endpoints {x,y} y los
 // componentes están colocados en posiciones aproximadas. Esta función
 // convierte endpoints {x,y} a {compId, termId} cuando hay un terminal a
@@ -57,4 +58,75 @@ function snapEndpoint(ep, grid, bin, eps2) {
   }
   if (best) return { compId: best.compId, termId: best.termId };
   return ep;
+}
+
+// Inserta un componente junction donde 3+ endpoints sueltos concurren al mismo
+// punto (con tolerancia), y reconecta esos endpoints al junction.
+// Junction.S=(10,20), N=(10,0), W=(0,10), E=(20,10) en coords locales; el
+// componente se centra en el punto de concurrencia.
+export function addJunctionsAtBranches(project, opts = {}) {
+  const tolerance = opts.tolerance ?? 5;
+  const minWires = opts.minWires ?? 3;
+
+  // Agrupar endpoints sueltos por coord (snapeada a tolerance)
+  const groups = new Map();   // key → [{ wireId, side, x, y }]
+  for (const w of project.wires) {
+    for (const side of ['from', 'to']) {
+      const ep = w[side];
+      if (!ep || ep.compId) continue;
+      const bx = Math.round(ep.x / tolerance) * tolerance;
+      const by = Math.round(ep.y / tolerance) * tolerance;
+      const key = `${bx},${by}`;
+      let arr = groups.get(key);
+      if (!arr) { arr = []; groups.set(key, arr); }
+      arr.push({ wireId: w.id, side, x: ep.x, y: ep.y });
+    }
+  }
+
+  const newComps = [];
+  const updates = new Map(); // wireId → { from?, to? }
+  let added = 0;
+
+  for (const [, members] of groups) {
+    if (members.length < minWires) continue;
+    // Centroide del grupo
+    const cx = members.reduce((s, m) => s + m.x, 0) / members.length;
+    const cy = members.reduce((s, m) => s + m.y, 0) / members.length;
+    const id = `j${Date.now().toString(36)}${Math.random().toString(36).slice(2,4)}${added}`;
+    newComps.push({
+      id,
+      type: 'junction',
+      x: Math.round(cx) - 10,    // junction.size = 20x20; centro local = (10,10)
+      y: Math.round(cy) - 10,
+      rot: 0,
+      props: {},
+    });
+    added++;
+    // Asignar cada endpoint a la terminal más natural del junction según dirección
+    for (const m of members) {
+      const dx = m.x - cx, dy = m.y - cy;
+      let term;
+      if (Math.abs(dx) > Math.abs(dy)) term = dx > 0 ? 'E' : 'W';
+      else                              term = dy > 0 ? 'S' : 'N';
+      const u = updates.get(m.wireId) || {};
+      u[m.side] = { compId: id, termId: term };
+      updates.set(m.wireId, u);
+    }
+  }
+
+  const newWires = project.wires.map(w => {
+    const u = updates.get(w.id);
+    if (!u) return w;
+    return { ...w, ...u };
+  });
+
+  return {
+    project: {
+      ...project,
+      components: [...project.components, ...newComps],
+      wires: newWires,
+    },
+    added,
+    reconnected: [...updates.values()].reduce((s, u) => s + (u.from?1:0) + (u.to?1:0), 0),
+  };
 }

@@ -8,7 +8,7 @@ import { parseDxf } from './import/dxf.js';
 import { recognize } from './import/recognize.js';
 import { extractPatterns, loadSavedTags, saveTags } from './import/patterns.js';
 import { optionFor } from './import/tagOptions.js';
-import { snapWires } from './import/snap.js';
+import { snapWires, addJunctionsAtBranches } from './import/snap.js';
 import Canvas from './ui/Canvas.jsx';
 import Palette from './ui/Palette.jsx';
 import SidePanel from './ui/SidePanel.jsx';
@@ -247,11 +247,18 @@ export default function App() {
   };
 
   const runSnap = () => {
-    setProject(p => {
-      const { project: snapped, snapped: snappedCount, total: snapTotal } = snapWires(p, { tolerance: 25 });
-      alert(`Snap: ${snappedCount} de ${snapTotal} extremos de cable conectados a terminales.`);
-      return snapped;
-    });
+    const r = snapWires(project, { tolerance: 25 });
+    setProject(r.project);
+    alert(`Snap: ${r.snapped} de ${r.total} extremos de cable conectados a terminales.`);
+  };
+
+  const runJunctions = () => {
+    // 1) Insertar junctions donde concurren 3+ cables sueltos (tolerancia 15)
+    const j = addJunctionsAtBranches(project, { tolerance: 15, minWires: 3 });
+    // 2) Snapear los cables sueltos a las nuevas junctions (que tienen 4 terminales)
+    const s = snapWires(j.project, { tolerance: 25 });
+    setProject(s.project);
+    alert(`${j.added} junctions insertadas, ${j.reconnected} cables reconectados. Snap final: ${s.snapped}/${s.total}.`);
   };
 
   const clearTags = () => setTagAssignments({});
@@ -295,6 +302,7 @@ export default function App() {
             </label>
             <button onClick={runRecognize} title="Reconocer símbolos y cables del DXF">Reconocer</button>
             <button onClick={runSnap} title="Snap de cables a terminales (tolerancia 25 px)">Snap cables</button>
+            <button onClick={runJunctions} title="Inserta junctions donde concurren 3+ cables sueltos">Junctions</button>
             <button onClick={() => { setDxf(null); }} title="Quitar DXF">×</button>
           </>
         )}
