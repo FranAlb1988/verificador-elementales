@@ -65,15 +65,91 @@ export function suggestTagFor(fp, cluster, allEntities) {
     if (bigCircle) {
       const code = textInside(allEntities, bigCircle.entity.center, bigCircle.entity.radius * 1.2);
       if (code === 'M') return 'motor';
-      // Códigos ANSI (numéricos con posibles letras N/G/P/A/BF): relé de protección
       if (isAnsiCode(code)) {
         return { value: 'protection-relay', props: { tag: code, ansi: code } };
       }
-      // Letras simples: instrumentos (V, A, S)
       if (code && /^[VAS]$/.test(code)) {
         return { value: 'protection-relay', props: { tag: code, ansi: code } };
       }
     }
+  }
+
+  // ---- LUZ PILOTO (Lámina 605): círculo + 1 arco ----
+  // El símbolo "Ø" (círculo con línea/arco interior) es típico de luz piloto.
+  if (counts.circles === 1 && counts.arcs === 1 && counts.lines === 0 && counts.polys === 0) {
+    const ctr = cluster.find(it => it.entity.type === 'CIRCLE')?.entity.center;
+    if (ctr) {
+      const txt = textInside(allEntities, ctr, 8);
+      // Detectar color por letra (R/V/AM/B/A) cerca del símbolo
+      const color = txt === 'R' ? 'red'
+                  : txt === 'V' ? 'green'
+                  : txt === 'AM' ? 'yellow'
+                  : txt === 'B' ? 'white'
+                  : txt === 'A' ? 'blue' : 'green';
+      return { value: 'lamp', props: { color, label: txt || 'L' } };
+    }
+    return 'lamp';
+  }
+
+  // ---- BOBINA CONTACTOR (Lámina 605): círculo r=2-4 con 0-2 líneas verticales (leads) ----
+  if (counts.circles === 1 && counts.arcs === 0 && counts.polys === 0
+      && counts.lines >= 0 && counts.lines <= 2) {
+    const cEnt = cluster.find(it => it.entity.type === 'CIRCLE')?.entity;
+    if (cEnt && cEnt.radius >= 1.5 && cEnt.radius <= 4) {
+      const insideText = textInside(allEntities, cEnt.center, cEnt.radius * 0.5);
+      const lines = cluster.filter(it => it.entity.type === 'LINE');
+      const allVertical = lines.every(it => {
+        const a = it.entity.vertices[0], b = it.entity.vertices[1];
+        return Math.abs(a.x - b.x) < 0.5;
+      });
+      if (!insideText && allVertical) {
+        const tag = nearbyShortText(allEntities, cEnt.center, cEnt.radius * 4);
+        return { value: 'coil', props: { tag: tag || 'K?' } };
+      }
+    }
+  }
+
+  // ---- CONTACTO NO (Lámina 604): 3 líneas — 2 verticales + 1 diagonal ----
+  if (counts.lines === 3 && counts.circles === 0 && counts.arcs === 0 && counts.polys === 0
+      && w <= 4 && h >= 3 && h <= 10) {
+    const lines = cluster.map(it => it.entity);
+    const vert = lines.filter(l => Math.abs(l.vertices[0].x - l.vertices[1].x) < 0.5).length;
+    const diag = lines.filter(l => {
+      const dx = Math.abs(l.vertices[0].x - l.vertices[1].x);
+      const dy = Math.abs(l.vertices[0].y - l.vertices[1].y);
+      return dx > 0.3 && dy > 0.3;
+    }).length;
+    if (vert === 2 && diag === 1) {
+      const ctr = { x: (bbox.minX + bbox.maxX)/2, y: (bbox.minY + bbox.maxY)/2 };
+      const tag = nearbyShortText(allEntities, ctr, 6);
+      return { value: 'contact-no', props: { tag: tag || 'K?' } };
+    }
+  }
+
+  // ---- CONTACTO NC (Lámina 604): 4 líneas — 2 verticales + 1 diagonal + 1 barra horizontal ----
+  if (counts.lines === 4 && counts.circles === 0 && counts.arcs === 0 && counts.polys === 0
+      && w <= 5 && h >= 3 && h <= 10) {
+    const lines = cluster.map(it => it.entity);
+    const vert = lines.filter(l => Math.abs(l.vertices[0].x - l.vertices[1].x) < 0.5).length;
+    const horiz = lines.filter(l => Math.abs(l.vertices[0].y - l.vertices[1].y) < 0.5).length;
+    const diag = lines.filter(l => {
+      const dx = Math.abs(l.vertices[0].x - l.vertices[1].x);
+      const dy = Math.abs(l.vertices[0].y - l.vertices[1].y);
+      return dx > 0.3 && dy > 0.3;
+    }).length;
+    if (vert === 2 && horiz >= 1 && diag >= 1) {
+      const ctr = { x: (bbox.minX + bbox.maxX)/2, y: (bbox.minY + bbox.maxY)/2 };
+      const tag = nearbyShortText(allEntities, ctr, 6);
+      return { value: 'contact-nc', props: { tag: tag || 'K?' } };
+    }
+  }
+
+  // ---- BOTONERA con flag chevron (Lámina 604): 2 polilíneas formando flecha ----
+  // Patrón observado: P=2 con largo similar, bbox ~3-5 unidades, sin líneas ni círculos
+  if (counts.polys === 2 && counts.lines === 0 && counts.circles === 0 && counts.arcs === 0
+      && w <= 6 && h <= 6) {
+    // Por defecto sugerir pulsador NO; el usuario puede cambiarlo si es NC
+    return 'pushbutton-no';
   }
 
   // ---- TIERRA: 3 líneas horizontales decrecientes + línea vertical ----
@@ -124,7 +200,6 @@ function ptInBbox(p, bbox, pad = 0) {
 }
 
 // Busca el texto más cercano al centro dado (dentro de maxDist).
-// Devuelve el texto trim'eado o null.
 function textInside(allEntities, center, maxDist) {
   let best = null, bestD = maxDist;
   for (const e of allEntities) {
@@ -133,6 +208,23 @@ function textInside(allEntities, center, maxDist) {
     if (!p) continue;
     const txt = (e.text || e.string || '').replace(/\\[A-Z][^;]*;/g, '').trim();
     if (!txt) continue;
+    const d = Math.hypot(p.x - center.x, p.y - center.y);
+    if (d < bestD) { bestD = d; best = txt; }
+  }
+  return best;
+}
+
+// Como textInside, pero excluye textos largos (notas/descripciones) — útil para
+// extraer tags cortos (M, RX, K1, FU1, etc.) cerca de un símbolo.
+function nearbyShortText(allEntities, center, maxDist) {
+  let best = null, bestD = maxDist;
+  for (const e of allEntities) {
+    if (e.type !== 'TEXT' && e.type !== 'MTEXT') continue;
+    const p = e.position || e.startPoint;
+    if (!p) continue;
+    const txt = (e.text || e.string || '').replace(/\\[A-Z][^;]*;/g, '').trim();
+    if (!txt || txt.length > 6) continue;
+    if (!/^[A-Z0-9\/\-]+$/i.test(txt)) continue;
     const d = Math.hypot(p.x - center.x, p.y - center.y);
     if (d < bestD) { bestD = d; best = txt; }
   }
