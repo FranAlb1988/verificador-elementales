@@ -24,6 +24,7 @@ export default function App() {
   const [dxf, setDxf] = useState(null);
   const [dxfScale, setDxfScale] = useState(0.3);
   const [showDxf, setShowDxf] = useState(true);
+  const [planeOnly, setPlaneOnly] = useState(false);  // si true, oculta componentes auto-colocados
   const [patterns, setPatterns] = useState(null);          // [{sig, fp, count, ...}]
   const [tagAssignments, setTagAssignments] = useState({}); // sig → componentType
 
@@ -375,7 +376,11 @@ export default function App() {
         {dxf && (
           <>
             <button className={showDxf ? 'active' : ''} onClick={() => setShowDxf(s => !s)} title="Mostrar/ocultar fondo DXF">
-              Fondo {showDxf ? 'ON' : 'OFF'}
+              Plano {showDxf ? 'ON' : 'OFF'}
+            </button>
+            <button className={planeOnly ? 'active' : ''} onClick={() => setPlaneOnly(p => !p)}
+                    title="Mostrar SOLO el plano original (oculta los componentes que coloqué encima)">
+              {planeOnly ? '👁 Solo plano' : 'Plano + comp.'}
             </button>
             <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '0 6px' }}>
               Zoom
@@ -414,7 +419,7 @@ export default function App() {
           wireStart={wireStart}
           setWireStart={setWireStart}
           simInputs={simInputs}
-          dxf={dxf} dxfScale={dxfScale} showDxf={showDxf}
+          dxf={dxf} dxfScale={dxfScale} showDxf={showDxf} planeOnly={planeOnly}
           onPlace={placeComponent}
           onSelect={(id) => { setSelection(id); if (id && project.components.find(c=>c.id===id)) setTab('props'); }}
           onMove={moveComponent}

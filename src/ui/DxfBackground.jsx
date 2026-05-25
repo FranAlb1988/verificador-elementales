@@ -3,34 +3,35 @@
 // el bbox al origen, con factor de escala configurable.
 import React from 'react';
 
+// Estilo "plano de ingeniería": casi todo negro como en AutoCAD impreso.
+// Solo unas líneas finas en colores tenues para distinguir capas auxiliares.
 const LAYER_COLORS = {
-  'JRI_EL-Simbología':         '#1f2937',
-  'JRI_EL-Alambrado Interno':  '#0ea5e9',
-  'JRI_EL-Alambrado Externo':  '#6366f1',
-  'JRI_EL-Alimentación BT':    '#7c3aed',
-  'JRI_EL-Módulo':             '#16a34a',
-  'JRI_EL-Barra':              '#f97316',
-  'JRI_EL-Equipo eléctrico':   '#dc2626',
-  'JRI_CM-Texto':              '#475569',
-  'JRI_CM-Titulos':            '#0f172a',
-  'JRI_CM-Cotas':              '#94a3b8',
-  'FTEX_SUBTIT':               '#64748b',
-  'FORMATO_LG':                '#cbd5e1',
+  'JRI_EL-Simbología':         '#000000',
+  'JRI_EL-Alambrado Interno':  '#000000',
+  'JRI_EL-Alambrado Externo':  '#000000',
+  'JRI_EL-Alimentación BT':    '#000000',
+  'JRI_EL-Módulo':             '#000000',
+  'JRI_EL-Barra':              '#000000',
+  'JRI_EL-Equipo eléctrico':   '#000000',
+  'JRI_CM-Texto':              '#000000',
+  'JRI_CM-Titulos':            '#000000',
+  'JRI_CM-Cotas':              '#6b7280',
+  'FTEX_SUBTIT':               '#000000',
+  'FORMATO_LG':                '#94a3b8',
   'JRI_CM-Ventanas':           '#94a3b8',
-  '0':                         '#94a3b8',
+  '0':                         '#000000',
 };
 
-const colorFor = (layer) => LAYER_COLORS[layer] || '#64748b';
+const colorFor = (layer) => LAYER_COLORS[layer] || '#000000';
 
-export default function DxfBackground({ dxf, scale, offsetX, offsetY, opacity = 0.65 }) {
+export default function DxfBackground({ dxf, scale, offsetX, offsetY, opacity = 1 }) {
   if (!dxf || !dxf.entities) return null;
-  // Transform: editor_x = (dxf_x - bbox.minX) * scale + offsetX
-  //            editor_y = (bbox.maxY - dxf_y) * scale + offsetY   (flip Y)
   const T = ({ x, y }) => ({
     x: (x - dxf.bbox.minX) * scale + offsetX,
     y: (dxf.bbox.maxY - y) * scale + offsetY,
   });
-  const sw = Math.max(0.4, 0.6 * scale);
+  // Stroke width un poco más grueso para que se vea como plano impreso
+  const sw = Math.max(0.6, 0.9 * scale);
 
   return (
     <g style={{ opacity, pointerEvents: 'none' }}>
@@ -83,6 +84,23 @@ function renderEntity(e, i, T, sw, scale) {
       if (!e.points) return null;
       const pts = e.points.map(T).map(p => `${p.x},${p.y}`).join(' ');
       return <polygon key={i} points={pts} fill={c} stroke={c} strokeWidth={sw} />;
+    }
+    case 'HATCH': {
+      // Renderiza el HATCH como polígono(s) cerrados de sus boundaries.
+      const paths = [];
+      const boundaries = e.boundaries || [];
+      for (const b of boundaries) {
+        if (!Array.isArray(b) || b.length === 0) continue;
+        const pts = b.map(v => v && typeof v.x === 'number' ? T(v) : null).filter(Boolean);
+        if (pts.length < 3) continue;
+        paths.push(pts.map(p => `${p.x},${p.y}`).join(' '));
+      }
+      if (paths.length === 0) return null;
+      return <g key={i}>
+        {paths.map((d, k) => (
+          <polygon key={k} points={d} fill={c} stroke="none" />
+        ))}
+      </g>;
     }
     case 'ELLIPSE': {
       if (!e.center || !e.majorAxisEndPoint) return null;

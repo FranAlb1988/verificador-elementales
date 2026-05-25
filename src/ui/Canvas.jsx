@@ -11,7 +11,7 @@ export default function Canvas({
   wireStart, setWireStart,
   onPlace, onSelect, onMove, onWire, onDelete,
   onButtonPress, simInputs,
-  dxf, dxfScale, showDxf,
+  dxf, dxfScale, showDxf, planeOnly,
 }) {
   const svgRef = useRef(null);
   const [drag, setDrag] = useState(null); // {compId, dx, dy}
@@ -90,9 +90,12 @@ export default function Canvas({
 
         {/* DXF background */}
         {dxf && showDxf && (
-          <DxfBackground dxf={dxf} scale={dxfScale} offsetX={40} offsetY={40} />
+          <DxfBackground dxf={dxf} scale={dxfScale} offsetX={40} offsetY={40} opacity={1} />
         )}
 
+        {/* Si Solo plano: no renderizar wires ni componentes (solo el DXF fiel) */}
+        {!planeOnly && (
+        <>
         {/* Wires */}
         {project.wires.map(wire => {
           const pa = endpointPos(wire.from, project, netlist);
@@ -196,9 +199,11 @@ export default function Canvas({
             </g>
           );
         })}
+        </>
+        )}
       </svg>
 
-      {mode !== 'sim' && (looseWires > 0 || danglingTerms > 0) && (
+      {mode !== 'sim' && !planeOnly && (looseWires > 0 || danglingTerms > 0) && (
         <div className="legend">
           <div className="row">
             <svg width="22" height="6">
