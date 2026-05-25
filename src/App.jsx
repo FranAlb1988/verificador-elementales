@@ -8,7 +8,7 @@ import { parseDxf } from './import/dxf.js';
 import { recognize } from './import/recognize.js';
 import { extractPatterns, loadSavedTags, saveTags } from './import/patterns.js';
 import { optionFor } from './import/tagOptions.js';
-import { snapWires, addJunctionsAtBranches } from './import/snap.js';
+import { snapWires, addJunctionsAtBranches, snapByContainment } from './import/snap.js';
 import Canvas from './ui/Canvas.jsx';
 import Palette from './ui/Palette.jsx';
 import SidePanel from './ui/SidePanel.jsx';
@@ -261,6 +261,14 @@ export default function App() {
     alert(`${j.added} junctions insertadas, ${j.reconnected} cables reconectados. Snap final: ${s.snapped}/${s.total}.`);
   };
 
+  const runSnapForzado = () => {
+    // Snap por contención: para endpoints rebeldes, si caen dentro del bbox de
+    // un componente, snapearlos al terminal más cercano del mismo.
+    const r = snapByContainment(project, { padding: 6 });
+    setProject(r.project);
+    alert(`Snap forzado por contención: ${r.snapped}/${r.attempts} extremos rebeldes resueltos.`);
+  };
+
   const clearTags = () => setTagAssignments({});
 
   const errCount = findings.filter(f => f.severity === 'error').length;
@@ -303,6 +311,7 @@ export default function App() {
             <button onClick={runRecognize} title="Reconocer símbolos y cables del DXF">Reconocer</button>
             <button onClick={runSnap} title="Snap de cables a terminales (tolerancia 25 px)">Snap cables</button>
             <button onClick={runJunctions} title="Inserta junctions donde concurren 3+ cables sueltos">Junctions</button>
+            <button onClick={runSnapForzado} title="Snap por contención en bbox del componente (más agresivo)">Snap forzado</button>
             <button onClick={() => { setDxf(null); }} title="Quitar DXF">×</button>
           </>
         )}

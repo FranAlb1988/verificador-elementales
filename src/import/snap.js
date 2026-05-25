@@ -60,6 +60,57 @@ function snapEndpoint(ep, grid, bin, eps2) {
   return ep;
 }
 
+// Snap "inverso" por contención: para cada endpoint suelto, si cae dentro del
+// bbox de un componente (con padding) lo conecta al terminal más cercano del
+// mismo. Más agresivo que snapWires (que requiere proximidad a un terminal).
+export function snapByContainment(project, opts = {}) {
+  const padding = opts.padding ?? 6;
+  // Indexar componentes y sus terminales
+  const compInfo = [];
+  for (const comp of project.components) {
+    const def = COMPONENT_TYPES[comp.type];
+    if (!def) continue;
+    const tp = terminalAbsPos(comp);
+    const terminals = Object.entries(tp).map(([id, pos]) => ({ termId: id, x: pos.x, y: pos.y }));
+    const r = ((comp.rot || 0) % 360 + 360) % 360;
+    let w = def.size.w, h = def.size.h;
+    if (r === 90 || r === 270) [w, h] = [h, w];
+    compInfo.push({
+      comp,
+      def,
+      terminals,
+      bbox: { minX: comp.x, minY: comp.y, maxX: comp.x + w, maxY: comp.y + h },
+    });
+  }
+
+  let snapped = 0, attempts = 0;
+  const newWires = project.wires.map(w => {
+    const a = trySnapBbox(w.from, compInfo, padding);
+    const b = trySnapBbox(w.to,   compInfo, padding);
+    if (!w.from?.compId) { attempts++; if (a.compId) snapped++; }
+    if (!w.to?.compId)   { attempts++; if (b.compId) snapped++; }
+    return { ...w, from: a, to: b };
+  });
+  return { project: { ...project, wires: newWires }, snapped, attempts };
+}
+
+function trySnapBbox(ep, compInfo, padding) {
+  if (!ep || ep.compId) return ep;
+  if (typeof ep.x !== 'number') return ep;
+  let best = null, bestD = Infinity;
+  for (const info of compInfo) {
+    const b = info.bbox;
+    if (ep.x < b.minX - padding || ep.x > b.maxX + padding) continue;
+    if (ep.y < b.minY - padding || ep.y > b.maxY + padding) continue;
+    // Buscar terminal más cercano de este componente
+    for (const t of info.terminals) {
+      const d = Math.hypot(t.x - ep.x, t.y - ep.y);
+      if (d < bestD) { bestD = d; best = { compId: info.comp.id, termId: t.termId }; }
+    }
+  }
+  return best || ep;
+}
+
 // Inserta un componente junction donde 3+ endpoints sueltos concurren al mismo
 // punto (con tolerancia), y reconecta esos endpoints al junction.
 // Junction.S=(10,20), N=(10,0), W=(0,10), E=(20,10) en coords locales; el
