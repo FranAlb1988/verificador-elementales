@@ -68,6 +68,13 @@ export default function Canvas({
     return () => window.removeEventListener('keydown', onKey);
   }, [mode, selection, onDelete, onSelect, setWireStart]);
 
+  // Estadísticas para la leyenda
+  const looseWires = project.wires.filter(w => !w.from?.compId || !w.to?.compId).length;
+  const danglingTerms = [...netlist.nets.values()].filter(n =>
+    n.terminals.length === 1 &&
+    !(project.components.find(c => c.id === n.terminals[0].compId)?.type === 'junction')
+  ).length;
+
   return (
     <div className="canvas-wrap" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
       <svg ref={svgRef}
@@ -93,19 +100,27 @@ export default function Canvas({
           if (!pa || !pb) return null;
           const net = netlist.wireNet.get(wire.id);
           const power = simResult?.netPower.get(net);
+          // ¿Algún endpoint no está conectado a un terminal?
+          const looseA = !wire.from?.compId;
+          const looseB = !wire.to?.compId;
           let cls = 'wire';
           if (mode === 'sim' && power) {
             if (power.L && power.N) cls += ' powered-both';
             else if (power.L) cls += ' powered-L';
             else if (power.N) cls += ' powered-N';
+          } else if (looseA || looseB) {
+            cls += ' loose';
           }
           if (selection === wire.id) cls += ' selected';
-          // path L-shape: H luego V
           const midX = pb.x;
           const d = `M ${pa.x} ${pa.y} L ${midX} ${pa.y} L ${pb.x} ${pb.y}`;
           return (
-            <path key={wire.id} className={cls} d={d}
-                  onClick={(e) => { e.stopPropagation(); if (mode === 'edit') onSelect(wire.id); }} />
+            <g key={wire.id}>
+              <path className={cls} d={d}
+                    onClick={(e) => { e.stopPropagation(); if (mode === 'edit') onSelect(wire.id); }} />
+              {looseA && mode !== 'sim' && <circle className="wire-endpoint-loose" cx={pa.x} cy={pa.y} r={2.5} />}
+              {looseB && mode !== 'sim' && <circle className="wire-endpoint-loose" cx={pb.x} cy={pb.y} r={2.5} />}
+            </g>
           );
         })}
 
@@ -153,27 +168,58 @@ export default function Canvas({
                }}>
               <Symbol comp={comp} def={def} energized={energized || coilOn} conducts={conducts} />
               {/* Terminales */}
-              {def.terminals.map(t => (
-                <circle key={t.id}
-                        className={`terminal ${wireStart && wireStart.compId === comp.id && wireStart.termId === t.id ? 'wire-start' : ''}`}
-                        cx={t.x} cy={t.y} r={3.5}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (mode !== 'edit') return;
-                          if (!wireStart) {
-                            setWireStart({ compId: comp.id, termId: t.id });
-                          } else if (wireStart.compId === comp.id && wireStart.termId === t.id) {
-                            setWireStart(null);
-                          } else {
-                            onWire(wireStart, { compId: comp.id, termId: t.id });
-                            setWireStart(null);
-                          }
-                        }} />
-              ))}
+              {def.terminals.map(t => {
+                // ¿Este terminal está colgando? (nadie más en su net)
+                const netId = netlist.termNet.get(`${comp.id}.${t.id}`);
+                const net = netId ? netlist.nets.get(netId) : null;
+                const dangling = mode !== 'sim' && net && net.terminals.length <= 1
+                  && def.electrical.role !== 'block' && comp.type !== 'junction';
+                const isWireStart = wireStart && wireStart.compId === comp.id && wireStart.termId === t.id;
+                return (
+                  <circle key={t.id}
+                          className={`terminal ${isWireStart ? 'wire-start' : ''} ${dangling ? 'dangling' : ''}`}
+                          cx={t.x} cy={t.y} r={dangling ? 4.5 : 3.5}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (mode !== 'edit') return;
+                            if (!wireStart) {
+                              setWireStart({ compId: comp.id, termId: t.id });
+                            } else if (wireStart.compId === comp.id && wireStart.termId === t.id) {
+                              setWireStart(null);
+                            } else {
+                              onWire(wireStart, { compId: comp.id, termId: t.id });
+                              setWireStart(null);
+                            }
+                          }} />
+                );
+              })}
             </g>
           );
         })}
       </svg>
+
+      {mode !== 'sim' && (looseWires > 0 || danglingTerms > 0) && (
+        <div className="legend">
+          <div className="row">
+            <svg width="22" height="6">
+              <line x1="0" y1="3" x2="22" y2="3" stroke="#ef4444" strokeWidth="1.8" strokeDasharray="5 3" />
+              <circle cx="22" cy="3" r="2.5" fill="#ef4444" stroke="#b91c1c" />
+            </svg>
+            <span>{looseWires} cables sin terminal</span>
+          </div>
+          <div className="row">
+            <svg width="22" height="14"><circle cx="11" cy="7" r="4.5" fill="#fee2e2" stroke="#ef4444" strokeWidth="2"/></svg>
+            <span>{danglingTerms} terminales sin conexión</span>
+          </div>
+        </div>
+      )}
+      {mode === 'sim' && (
+        <div className="legend">
+          <div className="row"><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#dc2626" strokeWidth="2"/></svg><span>Línea (L)</span></div>
+          <div className="row"><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#2563eb" strokeWidth="2"/></svg><span>Neutro (N)</span></div>
+          <div className="row"><svg width="22" height="6"><line x1="0" y1="3" x2="22" y2="3" stroke="#f97316" strokeWidth="3"/></svg><span>Cortocircuito</span></div>
+        </div>
+      )}
     </div>
   );
 }
