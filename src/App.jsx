@@ -269,6 +269,82 @@ export default function App() {
     alert(`Snap forzado por contención: ${r.snapped}/${r.attempts} extremos rebeldes resueltos.`);
   };
 
+  // Pipeline "Auto-todo": ejecuta Reconocer + Aplicar + Junctions + Snap forzado
+  // en cadena, sobre un único snapshot del proyecto, y actualiza estado una vez.
+  const runAuto = () => {
+    if (!dxf) return;
+    if (project.components.length > 0
+        && !confirm('Esto reemplazará el proyecto actual. ¿Continuar?')) return;
+
+    // 1) Patrones + sugerencias
+    const { patterns: pats } = extractPatterns(dxf);
+    const saved = loadSavedTags();
+    // 2) Cables del DXF
+    const r = recognize(dxf, { scale: dxfScale });
+
+    const bbox = dxf.bbox;
+    const T = (p) => ({
+      x: Math.round((p.x - bbox.minX) * dxfScale + 40),
+      y: Math.round((bbox.maxY - p.y) * dxfScale + 40),
+    });
+    const suggValue = (s) => typeof s === 'string' ? s : (s?.value || null);
+    const suggExtraProps = (s) => (typeof s === 'object' ? s?.props : null) || {};
+
+    // 3) Colocar componentes: sugerencias + tags persistidos
+    const newComps = [...r.components];
+    const persistMap = {};
+    for (const p of pats) {
+      const explicit = saved[p.sig];
+      const tagVal = explicit || suggValue(p.suggestion);
+      if (!tagVal) continue;
+      const opt = optionFor(tagVal);
+      if (!opt || !opt.type) continue;
+      const def = COMPONENT_TYPES[opt.type];
+      if (!def) continue;
+      const extra = explicit ? {} : suggExtraProps(p.suggestion);
+      persistMap[p.sig] = tagVal;
+      for (const inst of p.instances) {
+        const ctr = inst.fp.center;
+        const eCtr = T(ctr);
+        newComps.push({
+          id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}-${newComps.length}`,
+          type: opt.type,
+          x: eCtr.x - def.size.w / 2,
+          y: eCtr.y - def.size.h / 2,
+          rot: 0,
+          props: { ...def.defaultProps, ...(opt.props || {}), ...extra },
+        });
+      }
+    }
+
+    let proj = { components: newComps, wires: r.wires };
+    // 4) Snap básico
+    const s1 = snapWires(proj, { tolerance: 20 });   proj = s1.project;
+    // 5) Junctions en branches
+    const j = addJunctionsAtBranches(proj, { tolerance: 15, minWires: 3 }); proj = j.project;
+    // 6) Re-snap a las nuevas junctions
+    const s2 = snapWires(proj, { tolerance: 25 });   proj = s2.project;
+    // 7) Snap forzado por contención en bbox
+    const sf = snapByContainment(proj, { padding: 6 }); proj = sf.project;
+
+    setProject(proj);
+    setPatterns(pats);
+    setTagAssignments({});
+    setSelection(null);
+    setTab('checks');
+    saveTags({ ...saved, ...persistMap });
+
+    const totalEp = 2 * r.wires.length;
+    const looseAfter = proj.wires.filter(w => !w.from?.compId || !w.to?.compId).length;
+    alert(
+      `Pipeline AUTO ejecutado:\n` +
+      `  ${newComps.length} componentes colocados (${Object.keys(persistMap).length} tipos)\n` +
+      `  ${j.added} junctions automáticas insertadas\n` +
+      `  ${totalEp - 2 * looseAfter}/${totalEp} extremos conectados\n` +
+      `  ${looseAfter} cables aún con algún extremo suelto`
+    );
+  };
+
   const clearTags = () => setTagAssignments({});
 
   const errCount = findings.filter(f => f.severity === 'error').length;
@@ -308,7 +384,12 @@ export default function App() {
                      style={{ width: 90 }} />
               <span style={{ width: 32 }}>{dxfScale.toFixed(2)}x</span>
             </label>
-            <button onClick={runRecognize} title="Reconocer símbolos y cables del DXF">Reconocer</button>
+            <button onClick={runAuto}
+                    style={{ background: '#16a34a', borderColor: '#15803d', fontWeight: 600 }}
+                    title="Ejecuta Reconocer + Aplicar + Junctions + Snap forzado en cadena">
+              ✨ Auto
+            </button>
+            <button onClick={runRecognize} title="Solo extraer patrones (sin aplicar)">Reconocer</button>
             <button onClick={runSnap} title="Snap de cables a terminales (tolerancia 25 px)">Snap cables</button>
             <button onClick={runJunctions} title="Inserta junctions donde concurren 3+ cables sueltos">Junctions</button>
             <button onClick={runSnapForzado} title="Snap por contención en bbox del componente (más agresivo)">Snap forzado</button>
