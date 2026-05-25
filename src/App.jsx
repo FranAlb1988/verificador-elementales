@@ -8,6 +8,7 @@ import { parseDxf } from './import/dxf.js';
 import { recognize } from './import/recognize.js';
 import { extractPatterns, loadSavedTags, saveTags } from './import/patterns.js';
 import { optionFor } from './import/tagOptions.js';
+import { snapWires } from './import/snap.js';
 import Canvas from './ui/Canvas.jsx';
 import Palette from './ui/Palette.jsx';
 import SidePanel from './ui/SidePanel.jsx';
@@ -236,10 +237,21 @@ export default function App() {
         });
       }
     }
-    setProject(p => ({ ...p, components: [...p.components, ...newComps] }));
+    // Calcular siguiente proyecto + snap fuera de setProject para poder reportar estadísticas.
+    const next = { ...project, components: [...project.components, ...newComps] };
+    const { project: snapped, snapped: snappedCount, total: snapTotal } = snapWires(next, { tolerance: 20 });
+    setProject(snapped);
     const saved = loadSavedTags();
     saveTags({ ...saved, ...persistMap });
-    alert(`Colocados ${newComps.length} componentes. ${Object.keys(persistMap).length} firmas guardadas.`);
+    alert(`Colocados ${newComps.length} componentes. ${Object.keys(persistMap).length} firmas guardadas.\n${snappedCount} de ${snapTotal} extremos de cable snapeados a terminales.`);
+  };
+
+  const runSnap = () => {
+    setProject(p => {
+      const { project: snapped, snapped: snappedCount, total: snapTotal } = snapWires(p, { tolerance: 25 });
+      alert(`Snap: ${snappedCount} de ${snapTotal} extremos de cable conectados a terminales.`);
+      return snapped;
+    });
   };
 
   const clearTags = () => setTagAssignments({});
@@ -282,6 +294,7 @@ export default function App() {
               <span style={{ width: 32 }}>{dxfScale.toFixed(2)}x</span>
             </label>
             <button onClick={runRecognize} title="Reconocer símbolos y cables del DXF">Reconocer</button>
+            <button onClick={runSnap} title="Snap de cables a terminales (tolerancia 25 px)">Snap cables</button>
             <button onClick={() => { setDxf(null); }} title="Quitar DXF">×</button>
           </>
         )}
