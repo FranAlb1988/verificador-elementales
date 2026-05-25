@@ -4,21 +4,43 @@
 import { clusterSymbols } from './cluster.js';
 import { groupByFingerprint, fingerprint } from './fingerprint.js';
 import { isAnsiCode } from './ansi.js';
+import { decomposeCluster, reconstructKps } from './subPatterns.js';
 
 export function extractPatterns(dxfData, opts = {}) {
-  const clusters = clusterSymbols(dxfData.entities, { eps: opts.eps ?? 4 });
-  const groups = groupByFingerprint(clusters);
+  const macroClusters = clusterSymbols(dxfData.entities, { eps: opts.eps ?? 4 });
+
+  // Decomposición: para cada macro-cluster grande, buscar sub-patrones (contactos
+  // NO/NC, bobinas) que quedaron unidos por compartir coords con vecinos.
+  const allClusters = [];
+  const subTypeHints = new Map(); // signature → tipo sugerido por sub-decomposición
+  for (const mc of macroClusters) {
+    const { subs, leftover } = decomposeCluster(mc);
+    for (const sub of subs) {
+      const subCluster = reconstructKps(sub.items);
+      allClusters.push(subCluster);
+      const fp = fingerprint(subCluster);
+      subTypeHints.set(fp.sig, sub.type);
+    }
+    if (leftover.length > 0) allClusters.push(leftover);
+  }
+
+  const groups = groupByFingerprint(allClusters);
   const patterns = [...groups.values()]
-    .map(g => ({
-      sig: g.fp.sig,
-      fp: g.fp,
-      count: g.instances.length,
-      representative: g.instances[0].cluster,
-      instances: g.instances,
-      suggestion: suggestTagFor(g.fp, g.instances[0].cluster, dxfData.entities),
-    }))
+    .map(g => {
+      // Sugerencia: primero la del sub-patrón (si lo es), si no la heurística normal.
+      const subHint = subTypeHints.get(g.fp.sig);
+      const suggestion = subHint || suggestTagFor(g.fp, g.instances[0].cluster, dxfData.entities);
+      return {
+        sig: g.fp.sig,
+        fp: g.fp,
+        count: g.instances.length,
+        representative: g.instances[0].cluster,
+        instances: g.instances,
+        suggestion,
+      };
+    })
     .sort((a, b) => b.count - a.count);
-  return { patterns, totalClusters: clusters.length };
+  return { patterns, totalClusters: allClusters.length };
 }
 
 // Heurística: sugerir un tag value (de TAG_OPTIONS) basado en la firma y la
