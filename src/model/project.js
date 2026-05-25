@@ -52,63 +52,135 @@ export function deserialize(text) {
   return p;
 }
 
-// Proyecto de ejemplo: ladder de partidor M con seal-in, parada de emergencia,
-// parar, partir y luces FUNC (verde) y DET (roja). Réplica simplificada del
-// plano CT-001M, con componentes alineados verticalmente para que los
-// terminales coincidan por coordenadas (sin necesidad de cables extra).
+// Proyecto de ejemplo realista: estructura típica de partidor CCM como el
+// plano CT-001M de RAJO INCA. Incluye:
+//   - Sección de fuerza 480V 3F: alimentación, TTCC, contactor (representado
+//     por sus contactos M en cada fase), motor con tierra.
+//   - Transformador de control 480/120V.
+//   - Circuito de control 120V con seal-in: EMERG → PARAR → (PARTIR ‖ M-seal)
+//     → bobina M.
+//   - Luces piloto FUNC (verde), DET (roja).
+//   - IED (relé multifunción) como bloque.
+//   - Bornera CCM ↔ CAMPO con la botonera externa.
 export function exampleProject() {
   nextId = 1;
   const comps = [];
   const wires = [];
 
-  // Fuente 120 VAC arriba. L=(60,80) N=(140,80)
-  const sup = c('supply', 60, 60, { voltage: 120 });
+  // ============ SECCIÓN DE FUERZA 480V 3F ============
+  const sup3 = c('supply-3ph', 40, 40, { voltage: 480 });        // L1=(40,60) L2=(40,80) L3=(40,100)
 
-  // Rung principal (columna x=80) — la chain L → estop → parar → (partir||mAux) → coilM → N
-  const estop  = c('estop',         60, 100, { label: 'EMERG', maintained: true });
-  const parar  = c('pushbutton-nc', 60, 140, { label: 'PARAR', maintained: false });
-  const partir = c('pushbutton-no', 60, 180, { label: 'PARTIR', maintained: false });
-  const coilM  = c('coil',          60, 220, { tag: 'M' });
+  // TTCC sobre L1 (decorativo, una fase)
+  const ct1 = c('ct', 120, 40);                                   // P1=(120,60) P2=(160,60)
 
-  // Seal-in: contacto M NO en paralelo con PARTIR (columna x=160)
-  const mAuxSeal = c('contact-no', 140, 180, { tag: 'M' });
+  // Contactor M (3 contactos NO, uno por fase). Estos representan los polos de
+  // fuerza; comparten el tag "M" con la bobina del circuito de control.
+  const polM1 = c('contact-no', 220, 40, { tag: 'M' });          // (240,40)-(240,80) → vertical
+  const polM2 = c('contact-no', 280, 40, { tag: 'M' });
+  const polM3 = c('contact-no', 340, 40, { tag: 'M' });
 
-  // Lámpara FUNC (verde): rama L → M NO → lampF → N (columna x=240)
-  const mAuxFunc = c('contact-no', 220, 100, { tag: 'M' });
-  const lampF    = c('lamp',       220, 140, { color: 'green', label: 'FUNC' });
+  // Motor 3F + tierra de protección
+  const motor = c('motor', 440, 40, { tag: 'M1', hp: 40 });       // T1=(440,60) T2=(440,80) T3=(440,100) PE=(520,80)
+  const gnd   = c('ground', 540, 20);                              // G=(560,20)
 
-  // Lámpara DET (roja): rama L → M NC → lampD → N (columna x=320)
-  const mAuxDet  = c('contact-nc', 300, 100, { tag: 'M' });
-  const lampD    = c('lamp',       300, 140, { color: 'red',   label: 'DET' });
+  comps.push(sup3, ct1, polM1, polM2, polM3, motor, gnd);
 
-  comps.push(sup, estop, parar, partir, coilM, mAuxSeal, mAuxFunc, lampF, mAuxDet, lampD);
+  // Wires fuerza: cada fase atraviesa TTCC (L1) o directo (L2/L3) → polo del
+  // contactor → terminal del motor.
+  wires.push(W(sup3, 'L1', ct1,   'P1'));     // L1 a TTCC
+  wires.push(W(ct1,  'P2', polM1, '1'));     // TTCC al polo M1 superior (240,40)
+  wires.push(W(polM1,'2',  motor, 'T1'));    // polo M1 inferior (240,80) al motor T1
+  wires.push(W(sup3, 'L2', polM2, '1'));     // L2 directo al polo
+  wires.push(W(polM2,'2',  motor, 'T2'));
+  wires.push(W(sup3, 'L3', polM3, '1'));
+  wires.push(W(polM3,'2',  motor, 'T3'));
+  wires.push(W(motor,'PE', gnd,   'G'));
 
-  // Cableado.
-  // Riel L: supply.L (60,80) → estop.1 (80,100)
-  wires.push(W(sup, 'L', estop, '1'));
-  // estop, parar, partir, coilM están apilados verticalmente: sus terminales
-  // contiguos coinciden por coordenada (no se necesitan cables intermedios).
+  // ============ TRANSFORMADOR DE CONTROL 480/120 ============
+  // Primario alimentado entre L1 y L2 de fuerza
+  const trafo = c('transformer', 40, 180, { primaryV: 480, secondaryV: 120 });
+  // H1=(40,200) H2=(40,240) X1=(140,200) X2=(140,240)
+  comps.push(trafo);
+  wires.push(W(sup3, 'L1', trafo, 'H1'));    // 480V primario
+  wires.push(W(sup3, 'L2', trafo, 'H2'));
 
-  // Seal-in: mAuxSeal en paralelo con partir.
-  //   partir.1 (80,180) ↔ mAuxSeal.1 (160,180)
-  //   partir.2 (80,220) ↔ mAuxSeal.2 (160,220)
-  wires.push(W(partir,   '1', mAuxSeal, '1'));
-  wires.push(W(partir,   '2', mAuxSeal, '2'));
+  // ============ CIRCUITO DE CONTROL 120V (ladder vertical) ============
+  // Riel L (de X1, columna x=200) baja por la columna central.
+  // Riel N (de X2, columna x=560) baja por la derecha.
 
-  // Retorno N: coilM.A2 (80,260) → supply.N (140,80)
-  wires.push(W(coilM, 'A2', sup, 'N'));
+  // Junction inicial del riel L y N para distribuir
+  const jL0 = c('junction', 190, 200);   // (200,200)
+  const jN0 = c('junction', 550, 240);   // (560,250)
+  comps.push(jL0, jN0);
 
-  // Rama FUNC: L (supply.L 60,80) → mAuxFunc.1 (240,100)
-  wires.push(W(sup, 'L', mAuxFunc, '1'));
-  // mAuxFunc, lampF apilados: mAuxFunc.2 (240,140) = lampF.X1 (240,140)
-  // lampF.X2 (240,180) → supply.N (140,80)
-  wires.push(W(lampF, 'X2', sup, 'N'));
+  // Riel L: X1 → jL0 → ...
+  wires.push(W(trafo, 'X1', jL0, 'W'));     // (140,200)→(190,210) horizontal
+  // Riel N: X2 → jN0
+  wires.push(W(trafo, 'X2', jN0, 'W'));
 
-  // Rama DET: L → mAuxDet.1 (320,100)
-  wires.push(W(sup, 'L', mAuxDet, '1'));
-  // mAuxDet, lampD apilados: mAuxDet.2 (320,140) = lampD.X1 (320,140)
-  // lampD.X2 (320,180) → supply.N
-  wires.push(W(lampD, 'X2', sup, 'N'));
+  // Rung 1 — bobina M con seal-in (columna principal x=200, derivación en x=300)
+  const estop  = c('estop',         180, 260, { label: 'EMERG' });    // (200,260)-(200,300)
+  const parar  = c('pushbutton-nc', 180, 300, { label: 'PARAR' });    // (200,300)-(200,340)
+  const partir = c('pushbutton-no', 180, 340, { label: 'PARTIR' });   // (200,340)-(200,380)
+  const seal   = c('contact-no',    280, 340, { tag: 'M' });          // (300,340)-(300,380) — paralelo a partir
+  const coilM  = c('coil',          180, 380, { tag: 'M' });          // (200,380)-(200,420)
+  comps.push(estop, parar, partir, seal, coilM);
+
+  // jL0(200,220) → estop.1(200,260) baja por riel
+  wires.push(W(jL0, 'S', estop, '1'));
+  // estop.2(200,300) = parar.1(200,300) → contiguos (no need wire)
+  // parar.2(200,340) = partir.1(200,340) → contiguos
+  // partir.2(200,380) = coilM.A1(200,380) → contiguos
+  // Seal en paralelo a partir: partir.1 ↔ seal.1, partir.2 ↔ seal.2
+  wires.push(W(partir, '1', seal, '1'));
+  wires.push(W(partir, '2', seal, '2'));
+  // coilM.A2(200,420) → jN0 a través de junction intermedio
+  const jN1 = c('junction', 550, 410); comps.push(jN1);    // (560,420)
+  wires.push(W(coilM, 'A2', jN1, 'W'));
+  wires.push(W(jN0, 'S', jN1, 'N'));   // riel N descendente
+
+  // Rung 2 — Luz FUNC (verde): L → M NO → lamp → N (columna x=380)
+  const mFunc = c('contact-no', 360, 260, { tag: 'M' });             // (380,260)-(380,300)
+  const lampF = c('lamp',       360, 300, { color: 'green', label: 'FUNC' });
+  comps.push(mFunc, lampF);
+  // mFunc.1(380,260) → riel L (jL0 derivación)
+  const jL1 = c('junction', 370, 250); comps.push(jL1);   // (380,260) ; ah jL1 N=(380,250)
+  wires.push(W(jL0, 'E', jL1, 'W'));    // jL0(200,210) E=(210,210) → jL1.W(370,260) diagonal
+  wires.push(W(jL1, 'S', mFunc, '1'));  // (380,260)→(380,260) mismo coord ✓
+  // mFunc.2(380,300) = lampF.X1(380,300)
+  // lampF.X2(380,340) → riel N
+  const jN2 = c('junction', 550, 330); comps.push(jN2);   // (560,340)
+  wires.push(W(lampF, 'X2', jN2, 'W'));
+  wires.push(W(jN0, 'S', jN2, 'N'));     // ...ya conectado a jN0 (junction S es passthrough)
+
+  // Rung 3 — Luz DET (roja): L → M NC → lamp → N (columna x=460)
+  const mDet  = c('contact-nc', 440, 260, { tag: 'M' });             // (460,260)-(460,300)
+  const lampD = c('lamp',       440, 300, { color: 'red', label: 'DET' });
+  comps.push(mDet, lampD);
+  const jL2 = c('junction', 450, 250); comps.push(jL2);
+  wires.push(W(jL1, 'E', jL2, 'W'));
+  wires.push(W(jL2, 'S', mDet, '1'));
+  // mDet.2(460,300) = lampD.X1(460,300)
+  wires.push(W(lampD, 'X2', jN2, 'E'));
+
+  // ============ BORNERA CCM ↔ CAMPO (interfaz con botonera externa) ============
+  // PARTIR field
+  const bcCcmP = c('terminal', 100, 460, { location: 'CCM', number: '1' });
+  const bcCmpP = c('terminal', 160, 460, { location: 'CAMPO', number: '1' });
+  // PARAR field
+  const bcCcmR = c('terminal', 220, 460, { location: 'CCM', number: '2' });
+  const bcCmpR = c('terminal', 280, 460, { location: 'CAMPO', number: '2' });
+  // EMERG field
+  const bcCcmE = c('terminal', 340, 460, { location: 'CCM', number: '3' });
+  const bcCmpE = c('terminal', 400, 460, { location: 'CAMPO', number: '3' });
+  comps.push(bcCcmP, bcCmpP, bcCcmR, bcCmpR, bcCcmE, bcCmpE);
+
+  // ============ IED (relé multifunción) ============
+  const ied = c('ied', 660, 60, { tag: 'IED1' });
+  comps.push(ied);
+  // IED alimentación L/N (módulo base 120 VAC). Conectar a riel control.
+  wires.push(W(jL0, 'N', ied, 'L'));    // (200,200) → IED.L=(660,80)
+  wires.push(W(jN0, 'N', ied, 'N'));    // (560,240) → IED.N=(660,100)
 
   return { components: comps, wires };
 }
