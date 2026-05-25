@@ -3,6 +3,7 @@
 
 import { clusterSymbols } from './cluster.js';
 import { groupByFingerprint, fingerprint } from './fingerprint.js';
+import { isAnsiCode } from './ansi.js';
 
 export function extractPatterns(dxfData, opts = {}) {
   const clusters = clusterSymbols(dxfData.entities, { eps: opts.eps ?? 4 });
@@ -58,16 +59,20 @@ export function suggestTagFor(fp, cluster, allEntities) {
     return 'ied';
   }
 
-  // ---- MOTOR (Lámina 605/603): círculo grande r≥3.5 con "M" adentro ----
-  if (counts.circles >= 1) {
-    const bigCircle = cluster.find(it => it.entity.type === 'CIRCLE' && it.entity.radius >= 3.5);
+  // ---- MOTOR vs RELÉ PROTECCIÓN ANSI (Lámina 603, 605): círculo con código adentro ----
+  if (counts.circles >= 1 && counts.polys === 0) {
+    const bigCircle = cluster.find(it => it.entity.type === 'CIRCLE' && it.entity.radius >= 3);
     if (bigCircle) {
-      const hasM = allEntities.some(e =>
-        (e.type === 'TEXT' || e.type === 'MTEXT') &&
-        (e.text || e.string || '').trim() === 'M' &&
-        ptInBbox(e.position || e.startPoint, bbox, 1)
-      );
-      if (hasM) return 'motor';
+      const code = textInside(allEntities, bigCircle.entity.center, bigCircle.entity.radius * 1.2);
+      if (code === 'M') return 'motor';
+      // Códigos ANSI (numéricos con posibles letras N/G/P/A/BF): relé de protección
+      if (isAnsiCode(code)) {
+        return { value: 'protection-relay', props: { tag: code, ansi: code } };
+      }
+      // Letras simples: instrumentos (V, A, S)
+      if (code && /^[VAS]$/.test(code)) {
+        return { value: 'protection-relay', props: { tag: code, ansi: code } };
+      }
     }
   }
 
@@ -116,6 +121,22 @@ function ptInBbox(p, bbox, pad = 0) {
   if (!p) return false;
   return p.x >= bbox.minX - pad && p.x <= bbox.maxX + pad &&
          p.y >= bbox.minY - pad && p.y <= bbox.maxY + pad;
+}
+
+// Busca el texto más cercano al centro dado (dentro de maxDist).
+// Devuelve el texto trim'eado o null.
+function textInside(allEntities, center, maxDist) {
+  let best = null, bestD = maxDist;
+  for (const e of allEntities) {
+    if (e.type !== 'TEXT' && e.type !== 'MTEXT') continue;
+    const p = e.position || e.startPoint;
+    if (!p) continue;
+    const txt = (e.text || e.string || '').replace(/\\[A-Z][^;]*;/g, '').trim();
+    if (!txt) continue;
+    const d = Math.hypot(p.x - center.x, p.y - center.y);
+    if (d < bestD) { bestD = d; best = txt; }
+  }
+  return best;
 }
 
 // Detecta si 3 LINEs forman un triángulo cerrado (cada vértice conecta a otro).

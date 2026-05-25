@@ -206,18 +206,23 @@ export default function App() {
       y: Math.round((bbox.maxY - p.y) * dxfScale + 40),
     });
     const newComps = [];
-    // Tags efectivos = asignación explícita o sugerencia automática.
-    const effective = {};
+    // Tags efectivos: asignación explícita (string) o sugerencia automática
+    // (puede ser string o { value, props }).
+    const suggValue = (s) => typeof s === 'string' ? s : (s?.value || null);
+    const suggExtraProps = (s) => (typeof s === 'object' ? s?.props : null) || {};
+
+    const persistMap = {};   // sig → tag value para guardar en localStorage
     for (const p of patterns) {
-      const v = tagAssignments[p.sig] || p.suggestion;
-      if (v) effective[p.sig] = v;
-    }
-    for (const p of patterns) {
-      const tagVal = effective[p.sig];
+      const explicit = tagAssignments[p.sig];
+      const tagVal = explicit || suggValue(p.suggestion);
+      if (!tagVal) continue;
       const opt = optionFor(tagVal);
       if (!opt || !opt.type) continue;
       const def = COMPONENT_TYPES[opt.type];
       if (!def) continue;
+      // extra props sólo si fue sugerencia (no explícita)
+      const extra = explicit ? {} : suggExtraProps(p.suggestion);
+      persistMap[p.sig] = tagVal;
       for (const inst of p.instances) {
         const ctr = inst.fp.center;
         const eCtr = T(ctr);
@@ -227,15 +232,14 @@ export default function App() {
           x: eCtr.x - def.size.w / 2,
           y: eCtr.y - def.size.h / 2,
           rot: 0,
-          props: { ...def.defaultProps, ...(opt.props || {}) },
+          props: { ...def.defaultProps, ...(opt.props || {}), ...extra },
         });
       }
     }
     setProject(p => ({ ...p, components: [...p.components, ...newComps] }));
-    // Persistir asignaciones (explícitas, no sugerencias automáticas — el usuario las acepta al confirmar)
     const saved = loadSavedTags();
-    saveTags({ ...saved, ...effective });
-    alert(`Colocados ${newComps.length} componentes. ${Object.keys(effective).length} firmas guardadas.`);
+    saveTags({ ...saved, ...persistMap });
+    alert(`Colocados ${newComps.length} componentes. ${Object.keys(persistMap).length} firmas guardadas.`);
   };
 
   const clearTags = () => setTagAssignments({});

@@ -12,7 +12,8 @@ export default function TaggingPanel({ patterns, assignments, onAssign, onApply,
   }, [patterns, filter, assignments]);
   const totalInstances = patterns.reduce((s, p) => s + p.count, 0);
   // Cuenta tanto los tags asignados explícitos como las sugerencias automáticas.
-  const effective = (p) => assignments[p.sig] || p.suggestion || null;
+  const suggValue = (s) => typeof s === 'string' ? s : (s?.value || null);
+  const effective = (p) => assignments[p.sig] || suggValue(p.suggestion);
   const tagged = patterns.filter(p => effective(p));
   const taggedCount = tagged.length;
   const suggestedCount = tagged.filter(p => !assignments[p.sig] && p.suggestion).length;
@@ -34,7 +35,8 @@ export default function TaggingPanel({ patterns, assignments, onAssign, onApply,
       {shown.map(p => (
         <PatternRow key={p.sig} pattern={p}
                     type={assignments[p.sig] || ''}
-                    suggested={p.suggestion}
+                    suggested={suggValue(p.suggestion)}
+                    suggestedProps={typeof p.suggestion === 'object' ? p.suggestion?.props : null}
                     onChange={t => onAssign(p.sig, t)} />
       ))}
 
@@ -61,7 +63,7 @@ export default function TaggingPanel({ patterns, assignments, onAssign, onApply,
   );
 }
 
-function PatternRow({ pattern, type, suggested, onChange }) {
+function PatternRow({ pattern, type, suggested, suggestedProps, onChange }) {
   const fp = pattern.fp;
   const isSuggested = !!suggested && !type;
   const showValue = type || suggested || '';
@@ -75,7 +77,7 @@ function PatternRow({ pattern, type, suggested, onChange }) {
           {isSuggested && (
             <span style={{ marginLeft: 6, fontSize: 9, color: '#2563eb',
                             background: '#dbeafe', padding: '1px 4px', borderRadius: 3 }}>
-              sugerido
+              sugerido{suggestedProps?.ansi ? ` · ANSI ${suggestedProps.ansi}` : ''}
             </span>
           )}
         </div>
