@@ -2,28 +2,7 @@
 // nº de instancias, y dropdown para asignar tipo de componente.
 import React, { useMemo, useState } from 'react';
 import { COMPONENT_TYPES } from '../model/components.js';
-
-const TYPE_OPTIONS = [
-  { value: '',         label: '— ignorar —' },
-  { value: 'coil',     label: 'Bobina contactor' },
-  { value: 'contact-no', label: 'Contacto NO' },
-  { value: 'contact-nc', label: 'Contacto NC' },
-  { value: 'pushbutton-no', label: 'Pulsador NO (partir)' },
-  { value: 'pushbutton-nc', label: 'Pulsador NC (parar)' },
-  { value: 'estop',    label: 'Parada emergencia / pull cord' },
-  { value: 'selector-2', label: 'Selector 2 pos. (LOC/REM)' },
-  { value: 'lamp',     label: 'Luz piloto' },
-  { value: 'motor',    label: 'Motor' },
-  { value: 'ied',      label: 'Relé multifunción (IED)' },
-  { value: 'protection-relay', label: 'Relé protección (ANSI)' },
-  { value: 'overload', label: 'Relé térmico (sobrecarga)' },
-  { value: 'fuse',     label: 'Fusible' },
-  { value: 'terminal', label: 'Borne (CCM/CAMPO/PLC/...)' },
-  { value: 'junction', label: 'Nodo / unión' },
-  { value: 'ground',   label: 'Tierra' },
-  { value: 'ct',       label: 'TT/CC' },
-  { value: 'transformer', label: 'Transformador control' },
-];
+import { TAG_OPTIONS } from '../import/tagOptions.js';
 
 export default function TaggingPanel({ patterns, assignments, onAssign, onApply, onClear }) {
   const [filter, setFilter] = useState('relevant'); // relevant | all
@@ -32,9 +11,12 @@ export default function TaggingPanel({ patterns, assignments, onAssign, onApply,
     return patterns.filter(p => p.count >= 2 || assignments[p.sig]);
   }, [patterns, filter, assignments]);
   const totalInstances = patterns.reduce((s, p) => s + p.count, 0);
-  const taggedCount = patterns.filter(p => assignments[p.sig]).length;
-  const willPlace = patterns.filter(p => assignments[p.sig])
-    .reduce((s, p) => s + p.count, 0);
+  // Cuenta tanto los tags asignados explícitos como las sugerencias automáticas.
+  const effective = (p) => assignments[p.sig] || p.suggestion || null;
+  const tagged = patterns.filter(p => effective(p));
+  const taggedCount = tagged.length;
+  const suggestedCount = tagged.filter(p => !assignments[p.sig] && p.suggestion).length;
+  const willPlace = tagged.reduce((s, p) => s + p.count, 0);
 
   return (
     <div style={{ padding: 4 }}>
@@ -52,13 +34,14 @@ export default function TaggingPanel({ patterns, assignments, onAssign, onApply,
       {shown.map(p => (
         <PatternRow key={p.sig} pattern={p}
                     type={assignments[p.sig] || ''}
+                    suggested={p.suggestion}
                     onChange={t => onAssign(p.sig, t)} />
       ))}
 
       <div style={{ position: 'sticky', bottom: 0, background: '#fff',
                     borderTop: '1px solid #e5e7eb', padding: '8px 4px', marginTop: 12 }}>
         <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>
-          {taggedCount} patrones tagueados → colocará {willPlace} componentes
+          {taggedCount} patrones tagueados ({suggestedCount} sugerencia auto) → colocará {willPlace} componentes
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           <button onClick={onApply} disabled={taggedCount === 0}
@@ -78,20 +61,32 @@ export default function TaggingPanel({ patterns, assignments, onAssign, onApply,
   );
 }
 
-function PatternRow({ pattern, type, onChange }) {
+function PatternRow({ pattern, type, suggested, onChange }) {
   const fp = pattern.fp;
+  const isSuggested = !!suggested && !type;
+  const showValue = type || suggested || '';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px',
                   borderBottom: '1px solid #f3f4f6' }}>
       <Thumbnail cluster={pattern.representative} size={48} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 600 }}>×{pattern.count}</div>
+        <div style={{ fontSize: 12, fontWeight: 600 }}>
+          ×{pattern.count}
+          {isSuggested && (
+            <span style={{ marginLeft: 6, fontSize: 9, color: '#2563eb',
+                            background: '#dbeafe', padding: '1px 4px', borderRadius: 3 }}>
+              sugerido
+            </span>
+          )}
+        </div>
         <div style={{ fontSize: 10, color: '#6b7280' }}>
           L:{fp.counts.lines} C:{fp.counts.circles} A:{fp.counts.arcs} P:{fp.counts.polys} · {fp.bbox.w}×{fp.bbox.h}
         </div>
-        <select value={type} onChange={e => onChange(e.target.value)}
-                style={{ width: '100%', fontSize: 11, marginTop: 3, padding: '2px 4px' }}>
-          {TYPE_OPTIONS.map(o => (
+        <select value={showValue} onChange={e => onChange(e.target.value)}
+                style={{ width: '100%', fontSize: 11, marginTop: 3, padding: '2px 4px',
+                         borderColor: isSuggested ? '#2563eb' : '#d1d5db',
+                         background: isSuggested ? '#eff6ff' : '#fff' }}>
+          {TAG_OPTIONS.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>

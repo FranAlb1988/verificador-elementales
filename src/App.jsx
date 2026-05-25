@@ -7,6 +7,7 @@ import { simulate } from './engine/simulation.js';
 import { parseDxf } from './import/dxf.js';
 import { recognize } from './import/recognize.js';
 import { extractPatterns, loadSavedTags, saveTags } from './import/patterns.js';
+import { optionFor } from './import/tagOptions.js';
 import Canvas from './ui/Canvas.jsx';
 import Palette from './ui/Palette.jsx';
 import SidePanel from './ui/SidePanel.jsx';
@@ -205,28 +206,36 @@ export default function App() {
       y: Math.round((bbox.maxY - p.y) * dxfScale + 40),
     });
     const newComps = [];
+    // Tags efectivos = asignación explícita o sugerencia automática.
+    const effective = {};
     for (const p of patterns) {
-      const type = tagAssignments[p.sig];
-      if (!type || !COMPONENT_TYPES[type]) continue;
-      const def = COMPONENT_TYPES[type];
+      const v = tagAssignments[p.sig] || p.suggestion;
+      if (v) effective[p.sig] = v;
+    }
+    for (const p of patterns) {
+      const tagVal = effective[p.sig];
+      const opt = optionFor(tagVal);
+      if (!opt || !opt.type) continue;
+      const def = COMPONENT_TYPES[opt.type];
+      if (!def) continue;
       for (const inst of p.instances) {
         const ctr = inst.fp.center;
         const eCtr = T(ctr);
         newComps.push({
           id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}-${newComps.length}`,
-          type,
+          type: opt.type,
           x: eCtr.x - def.size.w / 2,
           y: eCtr.y - def.size.h / 2,
           rot: 0,
-          props: { ...def.defaultProps },
+          props: { ...def.defaultProps, ...(opt.props || {}) },
         });
       }
     }
     setProject(p => ({ ...p, components: [...p.components, ...newComps] }));
-    // Persistir asignaciones para futuros DXFs.
+    // Persistir asignaciones (explícitas, no sugerencias automáticas — el usuario las acepta al confirmar)
     const saved = loadSavedTags();
-    saveTags({ ...saved, ...tagAssignments });
-    alert(`Colocados ${newComps.length} componentes. Asignaciones guardadas para futuros planos.`);
+    saveTags({ ...saved, ...effective });
+    alert(`Colocados ${newComps.length} componentes. ${Object.keys(effective).length} firmas guardadas.`);
   };
 
   const clearTags = () => setTagAssignments({});
